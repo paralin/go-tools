@@ -759,6 +759,11 @@ func (ld *loader) refine(response *DriverResponse) ([]*Package, error) {
 			}(lpkg)
 		}
 		wg.Wait()
+
+		// Check if the context was canceled during loadRecursive and return early if so.
+		if err := ld.Context.Err(); err != nil {
+			return nil, err
+		}
 	}
 
 	result := make([]*Package, len(initial))
@@ -966,6 +971,11 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 	}
 
 	files, errs := ld.parseFiles(lpkg.CompiledGoFiles)
+	// parseFiles may return context canceled if ld.Context.Err() != nil
+	// check if the context was canceled during parseFiles and return early if so.
+	if err := ld.Context.Err(); err != nil {
+		return
+	}
 	for _, err := range errs {
 		appendError(err)
 	}
@@ -1132,9 +1142,8 @@ func (ld *loader) parseFiles(filenames []string) ([]*ast.File, []error) {
 	parsed := make([]*ast.File, n)
 	errors := make([]error, n)
 	for i, file := range filenames {
-		if ld.Config.Context.Err() != nil {
-			parsed[i] = nil
-			errors[i] = ld.Config.Context.Err()
+		if err := ld.Context.Err(); err != nil {
+			parsed[i], errors[i] = nil, err
 			continue
 		}
 		wg.Add(1)
